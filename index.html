@@ -633,20 +633,24 @@ async function ensureSignedIn() {
     if (existing.length) msalAccount = existing[0];
   }
   if (!msalAccount) {
-    const loginResult = await msalInstance.loginPopup({ scopes: GRAPH_SCOPES });
-    msalAccount = loginResult.account;
+    // Redirect flow: the browser navigates away to sign in and back,
+    // rather than opening a popup (which browsers block unless it's
+    // triggered by a direct click, not an automatic page-load call).
+    await msalInstance.loginRedirect({ scopes: GRAPH_SCOPES });
+    return null;
   }
   return msalAccount;
 }
 
 async function getGraphToken() {
   const account = await ensureSignedIn();
+  if (!account) throw new Error("Redirecting to sign-in\u2026");
   try {
     const result = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
     return result.accessToken;
   } catch (e) {
-    const result = await msalInstance.acquireTokenPopup({ scopes: GRAPH_SCOPES, account });
-    return result.accessToken;
+    await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account });
+    throw new Error("Redirecting to sign-in\u2026");
   }
 }
 
@@ -1552,7 +1556,8 @@ function closeModal(id) {
 
 (async function init() {
   try {
-    await ensureSignedIn();
+    const account = await ensureSignedIn();
+    if (!account) return; // page is navigating to sign-in, nothing more to do here
   } catch (e) {
     showStorageError("Couldn't sign in", e);
     render();
